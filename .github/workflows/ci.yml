@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 빌드 · 타입체크 · 단위 테스트
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  docker:
+    name: Docker Compose 실행 확인
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 테스트용 .env 생성
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-db-pass/' .env
+          sed -i 's#^DATABASE_URL=.*#DATABASE_URL=postgresql://erm:ci-db-pass@postgres:5432/erm?schema=public#' .env
+          sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+          sed -i "s#^DATA_ENCRYPTION_KEY=.*#DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)#" .env
+          sed -i 's/^SEED_ADMIN_PASSWORD=.*/SEED_ADMIN_PASSWORD=ci-admin-pass/' .env
+          sed -i 's/^SEED_DEMO=.*/SEED_DEMO=true/' .env
+
+      - name: 이미지 빌드
+        run: docker compose build
+
+      - name: 실행
+        run: docker compose up -d
+
+      - name: 웹 응답 대기
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:3000/login >/dev/null; then echo "웹 응답 확인"; exit 0; fi
+            sleep 2
+          done
+          echo "웹이 응답하지 않습니다"; exit 1
+
+      - name: 시나리오 확인 (로그인 → 출근 → 휴가 신청 → 팀장 승인)
+        run: |
+          set -euo pipefail
+          A=http://localhost:3000/api
+          J='Content-Type: application/json'
+          curl -fs -c mj.txt -H "$J" -d '{"email":"minjun@example.com","password":"ci-admin-pass"}' $A/auth/login | tee /dev/stderr | grep -q '김민준'
+          curl -fs -b mj.txt -X POST $A/attendance/clock-in | tee /dev/stderr | grep -q clockIn
+          NEXT_MON=$(date -d 'next monday +7 days' +%F)
+          ID=$(curl -fs -b mj.txt -H "$J" -d "{\"type\":\"ANNUAL\",\"startDate\":\"$NEXT_MON\",\"endDate\":\"$NEXT_MON\"}" $A/leave/requests | tee /dev/stderr | jq -r .id)
+          curl -fs -c dy.txt -H "$J" -d '{"email":"doyun@example.com","password":"ci-admin-pass"}' $A/auth/login >/dev/null
+          curl -fs -b dy.txt -H "$J" -d '{"decision":"APPROVE"}' $A/leave/requests/$ID/decision | tee /dev/stderr | jq -e '.status == "APPROVED"'
+          curl -fs -b mj.txt "$A/schedule/events?from=$NEXT_MON&to=$NEXT_MON" | tee /dev/stderr | jq -e 'map(select(.source == "LEAVE")) | length == 1'
+          curl -fs -b mj.txt $A/dashboard | jq -e '.balance.used >= 1'
+          echo "시나리오 통과"
+
+      - name: 실패 시 로그
+        if: failure()
+        run: docker compose ps -a && docker compose logs --no-color
+
+      - name: 정리
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    name: 이미지 배포 (GHCR, amd64 + arm64)
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: [api, web, worker, migrate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.repo }}-${{ matrix.target }}:latest
+            ${{ steps.meta.outputs.repo }}-${{ matrix.target }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
