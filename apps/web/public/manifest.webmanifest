@@ -1,0 +1,9 @@
+{
+  "name": "[제품명]",
+  "short_name": "[제품명]",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#1e4fd8",
+  "lang": "ko"
+}

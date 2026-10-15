@@ -1,0 +1,100 @@
+name: erm
+
+x-app-env: &app-env
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  JWT_SECRET: ${JWT_SECRET}
+  DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+  APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Seoul}
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  INTEGRATION_PROVIDER: ${INTEGRATION_PROVIDER:-internal}
+  SYNOLOGY_BASE_URL: ${SYNOLOGY_BASE_URL:-}
+  SYNOLOGY_CHAT_WEBHOOK_URL: ${SYNOLOGY_CHAT_WEBHOOK_URL:-}
+  SYNOLOGY_CALDAV_URL: ${SYNOLOGY_CALDAV_URL:-}
+  SYNOLOGY_CALDAV_USERNAME: ${SYNOLOGY_CALDAV_USERNAME:-}
+  SYNOLOGY_CALDAV_PASSWORD: ${SYNOLOGY_CALDAV_PASSWORD:-}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # DB 마이그레이션과 초기 데이터. 실행 후 종료됩니다.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      <<: *app-env
+      SEED_TENANT_NAME: ${SEED_TENANT_NAME:-우리회사}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_DEMO: ${SEED_DEMO:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      PORT: "4000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      target: worker
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  redisdata:
