@@ -21,6 +21,11 @@ export class CryptoService {
     this.key = key;
   }
 
+  /** 암호화 키가 설정되어 비밀 값을 저장할 수 있는지 */
+  get ready(): boolean {
+    return this.key !== null;
+  }
+
   private requireKey(): Buffer {
     if (!this.key) throw new Error('DATA_ENCRYPTION_KEY가 설정되지 않아 개인정보를 저장할 수 없습니다.');
     return this.key;

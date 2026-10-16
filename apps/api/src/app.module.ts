@@ -12,7 +12,7 @@ const config = loadConfig();
 @Module({
   imports: [
     InfraModule.forRoot(config),
-    AdaptersModule.forProvider(config.integrationProvider),
+    AdaptersModule,
     JwtModule.register({ global: true, secret: config.jwtSecret }),
     CoreModule,
   ],

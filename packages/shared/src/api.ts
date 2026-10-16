@@ -44,6 +44,68 @@ export const scheduleSuggestionDecisionSchema = z.object({
 });
 export type ScheduleSuggestionDecisionInput = z.infer<typeof scheduleSuggestionDecisionSchema>;
 
+// ── 관리자 설정 ─────────────────────────────────────────
+
+const cidrRe = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(\/(\d|[12]\d|3[0-2]))?$/;
+const cidr = z
+  .string()
+  .trim()
+  .refine((v) => {
+    const m = cidrRe.exec(v);
+    return !!m && [1, 2, 3, 4].every((i) => Number(m[i]) <= 255);
+  }, '사내 IP 대역 형식이 올바르지 않습니다. 예: 192.168.10.0/24');
+
+const optionalUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((v) => v === '' || /^https?:\/\/[^\s]+$/i.test(v), '주소는 http:// 또는 https:// 로 시작해야 합니다.')
+  .optional();
+
+export const adminSettingsUpdateSchema = z.object({
+  allowedCidrs: z.array(cidr).max(20).optional(),
+  integration: z
+    .object({
+      provider: z.enum(['internal', 'synology']),
+      synology: z
+        .object({
+          chatWebhookUrl: optionalUrl,
+          caldavUrl: optionalUrl,
+          caldavUsername: z.string().trim().max(200).optional(),
+          /** undefined: 기존 값 유지, '': 삭제, 그 외: 새 비밀번호 */
+          caldavPassword: z.string().max(500).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+export type AdminSettingsUpdateInput = z.infer<typeof adminSettingsUpdateSchema>;
+
+export interface AdminSettingsDto {
+  allowedCidrs: string[];
+  /** 지금 이 화면에 접속한 IP (사내 대역 설정 참고용) */
+  currentIp: string | null;
+  integration: {
+    provider: 'internal' | 'synology';
+    /** 관리자 화면 대신 서버 환경 변수 값을 쓰는 중인지 */
+    fromEnvironment: boolean;
+    synology: {
+      chatWebhookUrl: string;
+      caldavUrl: string;
+      caldavUsername: string;
+      caldavPasswordSet: boolean;
+    };
+  };
+  /** 개인정보 암호화 키 설정 여부 (없으면 비밀번호를 저장할 수 없음) */
+  encryptionReady: boolean;
+}
+
+export const integrationTestSchema = z.object({ target: z.enum(['chat', 'calendar']) });
+export interface IntegrationTestResultDto {
+  ok: boolean;
+  message: string;
+}
+
 export type Role = 'ADMIN' | 'MANAGER' | 'MEMBER';
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELED';
 

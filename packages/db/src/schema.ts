@@ -41,11 +41,29 @@ export const leaveTypeEnum = pgEnum('leave_type', ['ANNUAL', 'HALF_AM', 'HALF_PM
 export const leaveStatusEnum = pgEnum('leave_status', ['PENDING', 'APPROVED', 'REJECTED', 'CANCELED']);
 export const suggestionStatusEnum = pgEnum('suggestion_status', ['PENDING', 'ACCEPTED', 'DISMISSED']);
 
+export interface SynologySettings {
+  /** 시놀로지 챗 수신 웹훅(Incoming Webhook) 주소 */
+  chatWebhookUrl?: string | null;
+  /** 회사 캘린더 CalDAV 컬렉션 주소 */
+  caldavUrl?: string | null;
+  caldavUsername?: string | null;
+  /** AES-256-GCM 암호화된 CalDAV 비밀번호. 평문 저장 금지 */
+  caldavPasswordEncrypted?: string | null;
+}
+
+export interface IntegrationSettings {
+  /** internal: 자체 기능만 사용, synology: 시놀로지 연동 */
+  provider?: 'internal' | 'synology';
+  synology?: SynologySettings;
+}
+
 export interface TenantSettings {
   /** 출근 체크를 허용할 사내 네트워크 대역. 비어 있으면 제한 없음 */
   allowedCidrs?: string[];
   workStart?: string;
   workEnd?: string;
+  /** 외부 연동 설정. 관리자 화면에서 바꿉니다. 없으면 환경 변수 값을 씁니다. */
+  integration?: IntegrationSettings;
 }
 
 export const tenants = pgTable('tenants', {

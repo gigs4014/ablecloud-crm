@@ -70,6 +70,12 @@ jobs:
           curl -fs -b dy.txt -H "$J" -d '{"decision":"APPROVE"}' $A/leave/requests/$ID/decision | tee /dev/stderr | jq -e '.status == "APPROVED"'
           curl -fs -b mj.txt "$A/schedule/events?from=$NEXT_MON&to=$NEXT_MON" | tee /dev/stderr | jq -e 'map(select(.source == "LEAVE")) | length == 1'
           curl -fs -b mj.txt $A/dashboard | jq -e '.balance.used >= 1'
+          # 관리자 설정: 직원은 접근 불가, 관리자는 저장 가능, 비밀번호는 응답에 노출되지 않음
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b mj.txt $A/admin/settings)" = "403"
+          curl -fs -c ad.txt -H "$J" -d '{"email":"admin@example.com","password":"ci-admin-pass"}' $A/auth/login >/dev/null
+          curl -fs -b ad.txt -X PUT -H "$J" -d '{"allowedCidrs":["10.0.0.0/8"],"integration":{"provider":"synology","synology":{"caldavUrl":"http://nas.invalid/caldav/x/","caldavUsername":"bot","caldavPassword":"secret-value"}}}' $A/admin/settings \
+            | tee /dev/stderr | jq -e '.integration.synology.caldavPasswordSet == true and (tostring | contains("secret-value") | not)'
+          curl -fs -b ad.txt -H "$J" -d '{"target":"calendar"}' $A/admin/settings/integration/test | tee /dev/stderr | jq -e '.ok == false'
           echo "시나리오 통과"
 
       - name: 실패 시 로그

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { LeaveRequestDto, MeDto } from '@erm/shared';
 import { api } from '@/lib/api';
-import { CalendarIcon, ClockIcon, HomeIcon, InboxIcon, LogoutIcon, PlaneIcon } from './icons';
+import { CalendarIcon, ClockIcon, HomeIcon, InboxIcon, LogoutIcon, PlaneIcon, SettingsIcon } from './icons';
 import { cx } from './ui';
 
 const MeContext = createContext<MeDto | null>(null);
@@ -21,6 +21,8 @@ const NAV = [
   { href: '/approvals', label: '결재함', icon: InboxIcon, managerOnly: true },
   { href: '/schedule', label: '일정', icon: CalendarIcon },
 ] as const;
+
+const ADMIN_NAV = { href: '/admin/settings', label: '설정', icon: SettingsIcon } as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -43,6 +45,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isManager = me && me.role !== 'MEMBER';
   const items = NAV.filter((n) => !('managerOnly' in n) || isManager);
+  // 모바일 하단 메뉴에는 관리자 설정도 함께 보여줍니다.
+  const mobileItems = me?.role === 'ADMIN' ? [...items, ADMIN_NAV] : items;
   const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
   async function logout() {
@@ -81,8 +85,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ))}
           <div className="mx-2 my-3 h-px bg-line" />
-          <p className="px-3 py-1 text-xs font-semibold text-muted">연동 서비스</p>
-          <p className="px-3 text-[13px] leading-relaxed text-muted">메일 · 채팅 · 드라이브 연동은 다음 단계에서 연결됩니다.</p>
+          {me?.role === 'ADMIN' && (
+            <Link
+              href={ADMIN_NAV.href}
+              aria-current={isActive(ADMIN_NAV.href) ? 'page' : undefined}
+              className={cx(
+                'flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-[15px]',
+                isActive(ADMIN_NAV.href) ? 'bg-accent-soft font-semibold text-accent-ink' : 'text-ink-2 hover:bg-surface-muted',
+              )}
+            >
+              <ADMIN_NAV.icon size={18} />
+              {ADMIN_NAV.label}
+            </Link>
+          )}
           <div className="flex-1" />
           {me && (
             <div className="flex items-center justify-between gap-2 border-t border-line px-2 pt-4">
@@ -107,9 +122,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav
           aria-label="하단 메뉴"
           className="fixed inset-x-0 bottom-0 z-10 grid border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
-          style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+          style={{ gridTemplateColumns: `repeat(${mobileItems.length}, minmax(0, 1fr))` }}
         >
-          {items.map((n) => (
+          {mobileItems.map((n) => (
             <Link
               key={n.href}
               href={n.href}

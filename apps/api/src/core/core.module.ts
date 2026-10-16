@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AdminSettingsController } from './admin/admin-settings.controller';
+import { AdminSettingsService } from './admin/admin-settings.service';
 import { AttendanceController } from './attendance/attendance.controller';
 import { AttendanceService } from './attendance/attendance.service';
 import { AuthController } from './auth/auth.controller';
@@ -19,7 +21,8 @@ import { TenantService } from './tenant.service';
     LeaveController,
     ScheduleController,
     DashboardController,
+    AdminSettingsController,
   ],
-  providers: [TenantService, AttendanceService, LeaveService, ScheduleService],
+  providers: [TenantService, AdminSettingsService, AttendanceService, LeaveService, ScheduleService],
 })
 export class CoreModule {}
